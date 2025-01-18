@@ -2,8 +2,11 @@
 import pandas as pd
 import argparse
 from openpyxl import load_workbook
+from collections import namedtuple
+from dataclasses import dataclass
 
 # TODO:
+# - add a way to specify the starting position for a ticker (e.g. if you already had some shares before the export)
 # - do the fifo calculation
 # - keep track of conversion gains/losses
 
@@ -25,22 +28,48 @@ from openpyxl import load_workbook
 class trading_export_sorter:
     def __init__(self, input_file):
         self.df = pd.read_csv(input_file)
-        print(self.df.columns)
-        print(f"Actions in the file: {self.df['Action'].unique()}")
+        #print(self.df.columns)
+        #print(f"Actions in the file: {self.df['Action'].unique()}")
         # invert values of currency conversion fees
         self.df['Currency conversion fee'] *= -1
         # invert values of buy trades
         buy_columns_to_invert = ['Total', 'No. of shares']
         self.df.loc[self.df['Action'].str.lower().str.contains('buy'), buy_columns_to_invert] *= -1
         self.buy_and_sell = self.df.loc[self.df['Action'].isin(["Limit buy", "Limit sell", "Market buy", "Market sell"])].groupby('Ticker')
+       
+    def calculate_fifo(self, ticker):
+        Trade = namedtuple('Trade', ['shares', 'price'])
+        @dataclass
+        class Trade:
+            shares: float
+            price: float
+
+        trades = []
+        for _, row in ticker.iterrows():
+            result = 0
+            if "buy" in row["Action"].lower():
+                trades.append(Trade(shares=row['No. of shares'], price=row['Price / share']))
+            elif "sell" in row["Action"].lower():
+                for trade in trades:
+                    if trade.shares >= row['No. of shares']:
+                        trade.shares -= row['No. of shares']
+                        result += (row['Price / share'] - trade.price) * row['No. of shares']
+                        break
+                    else:
+                        row['No. of shares'] -= trade.shares
+                        result += (row['Price / share'] - trade.price) * trade.shares
+                        trade.shares = 0
+        resulting_shares = sum(trade.shares for trade in trades)
+        print(f"result: {row["Ticker"]} {resulting_shares} {result}")
 
     def do_work(self, output_file):
         result_sum = 0
         with pd.ExcelWriter(output_file, engine='openpyxl') as writer:
             for ticker_name in self.buy_and_sell.groups.keys():
-                columns_to_sum = ['Total', 'No. of shares', 'Result', 'Currency conversion fee']
                 ticker = self.buy_and_sell.get_group(ticker_name)
+                self.calculate_fifo(ticker)
                 # add a total row
+                columns_to_sum = ['Total', 'No. of shares', 'Result', 'Currency conversion fee']
                 sums = ticker[columns_to_sum].sum(numeric_only=True)
                 sums.name = 'Total'
                 ticker = pd.concat([ticker, sums.to_frame().T])
@@ -59,7 +88,6 @@ class trading_export_sorter:
             data.update(get_sum('Dividend (Dividend manufactured payment)'))
             data.update(get_sum('New card cost'))
             data.update({'Currency Conversion Fees': self.df["Currency conversion fee"].sum()})
-
             data.update({'Total results': result_sum})
 
             df_main = pd.DataFrame(list(data.items()))
