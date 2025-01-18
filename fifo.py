@@ -3,40 +3,58 @@ import pandas as pd
 import argparse
 from openpyxl import load_workbook
 
+# TODO:
+# - do the fifo calculation
+# - keep track of conversion gains/losses
+
+
+# negative values decrement the cash on balance
+# so buy trades are negative
+# new card cost is negative
+# currency conversion fee is negative
+#
+# positive values increment the cash on balance
+# so sell trades are positive
+# interest on cash is positive
+# lending interest is positive
+# deposit is positive
+# dividend is positive
+# dividend manufactured payment is positive
+
+
 class trading_export_sorter:
     def __init__(self, input_file):
         self.df = pd.read_csv(input_file)
+        self.prepare_data()
         self.buy_and_sell = self.df.loc[self.df['Action'].isin(["Limit buy", "Limit sell", "Market buy", "Market sell"])].groupby('Ticker')
 
+    def prepare_data(self):
+        # invert values of currency conversion fees
+        self.df['Currency conversion fee'] *= -1
+        # invert values of buy trades
+        buy_columns_to_invert = ['Total', 'No. of shares']
+        self.df.loc[self.df['Action'].str.lower().str.contains('buy'), buy_columns_to_invert] *= -1
+        
         
     def prepare_main_sheet(self):
-        interest_on_cash = self.df.loc[self.df['Action'] == "Interest on cash"]['Total'].sum()
-        lending_interest = self.df.loc[self.df['Action'] == "Lending interest"]['Total'].sum()
-        deposit = self.df.loc[self.df['Action'] == "Deposit"]['Total'].sum()
-        dividend = self.df.loc[self.df['Action'] == "Dividend (Dividend)"]['Total'].sum()
-        dividend_manufactured_payment = self.df.loc[self.df['Action'] == "Dividend (Dividend manufactured payment)"]['Total'].sum()
-        new_card_cost = self.df.loc[self.df['Action'] == "New card cost"]['Total'].sum()
-        all_currency_conversion_fees = self.df["Currency conversion fee"].sum()
+        def get_sum(column_name):
+            return {column_name:self.df.loc[self.df['Action'] == column_name]['Total'].sum()}
         
-        data = {
-            'Interest on Cash': interest_on_cash,
-            'Lending Interest': lending_interest,
-            'Deposit': deposit,
-            'Dividend': dividend,
-            'Dividend Manufactured Payment': dividend_manufactured_payment,
-            'New Card Cost': new_card_cost,
-            'Currency Conversion Fees': all_currency_conversion_fees
-        }
+        data = {}
+        data.update(get_sum("Interest on cash"))
+        data.update(get_sum('Lending Interest'))
+        data.update(get_sum('Deposit'))
+        data.update(get_sum('Dividend'))
+        data.update(get_sum('Dividend Manufactured Payment'))
+        data.update(get_sum('New Card Cost'))
+        data.update({'Currency Conversion Fees': self.df["Currency conversion fee"].sum()})
+
         df_main = pd.DataFrame(list(data.items()))
         return df_main
         
     def prepare_ticker(self, ticker_name):
         columns_to_sum = ['Total', 'No. of shares', 'Result', 'Currency conversion fee']
-        columns_to_invert = ['Total', 'No. of shares']
-
         ticker = self.buy_and_sell.get_group(ticker_name)
-        # invert values of buy trades
-        ticker.loc[ticker['Action'].str.lower().str.contains('buy'), columns_to_invert] *= -1
         # add a total row
         sums = ticker[columns_to_sum].sum(numeric_only=True)
         sums.name = 'Total'
