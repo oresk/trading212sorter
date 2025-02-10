@@ -1,0 +1,18 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Python: Debug FIFO",
+            "type": "python",
+            "request": "launch",
+            "program": "${workspaceFolder}/fifo.py",
+            "args": [
+                "--debug",
+                "--output-file", "output.xlsx",
+                "tmp.csv"
+            ],
+            "console": "integratedTerminal",
+            "justMyCode": true
+        }
+    ]
+}

@@ -46,22 +46,32 @@ class trading_export_sorter:
             price: float
 
         trades = []
+        result = 0
+
         for _, row in ticker.iterrows():
-            result = 0
-            if "buy" in row["Action"].lower():
-                trades.append(Trade(shares=row['No. of shares'], price=row['Price / share']))
-            elif "sell" in row["Action"].lower():
+            incomming_trade_action = row['Action'].lower()
+            incomming_trade = Trade(shares=row['No. of shares'], price=row['Price / share'])
+            self.debug_print(f"----------------------   ")
+            for i, trade in enumerate(trades):
+                self.debug_print(f"  Trade {i+1:3d}: {trade.shares:>10.2f} shares @ ${trade.price:>4.2f}")
+            self.debug_print(f"current result: {result}")
+            self.debug_print(f"----------------------   ")
+            self.debug_print(f"incomming row: {row['Action']} {row['No. of shares']:.2f} {row['Price / share']:.2f}")
+
+            if "buy" in incomming_trade_action:
+                trades.append(incomming_trade)
+            elif "sell" in incomming_trade_action:
                 for trade in trades:
-                    if trade.shares >= row['No. of shares']:
-                        trade.shares -= row['No. of shares']
-                        result += (row['Price / share'] - trade.price) * row['No. of shares']
+                    if abs(trade.shares) >= abs(incomming_trade.shares):
+                        trade.shares += incomming_trade.shares
+                        result += (incomming_trade.price - trade.price) * abs(incomming_trade.shares)
                         break
                     else:
-                        row['No. of shares'] -= trade.shares
-                        result += (row['Price / share'] - trade.price) * trade.shares
+                        incomming_trade.shares += trade.shares
+                        result += (incomming_trade.price - trade.price) * abs(trade.shares)
                         trade.shares = 0
         resulting_shares = sum(trade.shares for trade in trades)
-        self.debug_print(f"result: {row["Ticker"]} {resulting_shares} {result}")
+        self.debug_print(f"result: {row["Ticker"]} {resulting_shares=} {result=}")
         return result
 
     def do_work(self, output_file):
@@ -79,11 +89,12 @@ class trading_export_sorter:
                 ticker = pd.concat([ticker, sums.to_frame().T])
                 result_sum += sums['Result']
                 # add a fifo row
-                fifo_row = pd.DataFrame({'Action': 'Fifo', 'Result': result}, index=[0])
+                fifo_row = pd.DataFrame({'Result': result}, index=['Fifo'])
                 ticker = pd.concat([ticker, fifo_row])
                 
                 self.debug_print(f"exporting ticker: {ticker_name}")
                 ticker.to_excel(writer, sheet_name=ticker_name, index=True)
+                #break
 
             def get_sum(column_name):
                 return {column_name:self.df.loc[self.df['Action'] == column_name]['Total'].sum()}
@@ -139,6 +150,7 @@ def main():
     args = parser.parse_args()
 
     sorter = trading_export_sorter(args.csv_file, debug=args.debug)
+    #sorter.calculate_fifo_for_ticker(sorter.buy_and_sell.get_group('3MST'))
     sorter.do_work(args.output_file)
 
 if __name__ == "__main__":
