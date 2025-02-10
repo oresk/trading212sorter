@@ -7,8 +7,9 @@ from dataclasses import dataclass
 
 # TODO:
 # - add a way to specify the starting position for a ticker (e.g. if you already had some shares before the export)
-# - do the fifo calculation
 # - keep track of conversion gains/losses
+# - detect trades older than 2 years and ignore them in the fifo calculation
+# - use decimal for all calculations
 
 # negative values decrement the cash on balance
 # so buy trades are negative
@@ -24,7 +25,7 @@ from dataclasses import dataclass
 # dividend manufactured payment is positive
 
 
-class trading_export_sorter:
+class trading212_export_sorter:
     def __init__(self, input_file, debug=False):
         self.debug = debug
 
@@ -43,6 +44,7 @@ class trading_export_sorter:
         Trade = namedtuple('Trade', ['shares', 'price'])
         @dataclass
         class Trade:
+            action: str
             shares: float
             price: float
 
@@ -50,18 +52,17 @@ class trading_export_sorter:
         result = 0
 
         for _, row in ticker.iterrows():
-            incomming_trade_action = row['Action'].lower()
-            incomming_trade = Trade(shares=row['No. of shares'], price=row['Price / share'])
+            incomming_trade = Trade(action=row['Action'], shares=row['No. of shares'], price=row['Price / share'])
             self.debug_print(f"----------------------   ")
             for i, trade in enumerate(trades):
                 self.debug_print(f"  Trade {i+1:3d}: {trade.shares:>10.2f} shares @ ${trade.price:>4.2f}")
-            self.debug_print(f"current result: {result}")
+            self.debug_print(f"Current result: {result}")
             self.debug_print(f"----------------------   ")
-            self.debug_print(f"incomming row: {row['Action']} {row['No. of shares']:.2f} {row['Price / share']:.2f}")
+            self.debug_print(f"Incomming trade: {row['Action']} {row['No. of shares']:.2f} {row['Price / share']:.2f}")
 
-            if "buy" in incomming_trade_action:
+            if "buy" in incomming_trade.action:
                 trades.append(incomming_trade)
-            elif "sell" in incomming_trade_action:
+            elif "sell" in incomming_trade.action:
                 for trade in trades:
                     if abs(trade.shares) >= abs(incomming_trade.shares):
                         trade.shares += incomming_trade.shares
@@ -72,7 +73,7 @@ class trading_export_sorter:
                         result += (incomming_trade.price - trade.price) * abs(trade.shares)
                         trade.shares = 0
         resulting_shares = sum(trade.shares for trade in trades)
-        self.debug_print(f"result: {row["Ticker"]} {resulting_shares=} {result=}")
+        self.debug_print(f"Result: {row["Ticker"]} {resulting_shares=} {result=}")
         return result
 
     def do_work(self, output_file):
@@ -127,7 +128,6 @@ class trading_export_sorter:
     
         
     def adjust_column_widths(self, output_file): 
-        # Load the workbook to adjust column widths
         workbook = load_workbook(output_file)
         for sheet_name in workbook.sheetnames:
             worksheet = workbook[sheet_name]
@@ -143,14 +143,13 @@ class trading_export_sorter:
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Process exported data from trading212.")
+    parser = argparse.ArgumentParser(description="Process exported data from Trading212.")
     parser.add_argument("--output-file", default="output.xlsx", help="Path to the output Excel file")
     parser.add_argument("--debug", action="store_true", help="Enable debug mode")
     parser.add_argument("csv_file", help="Path to the trading212 export CSV file")
     args = parser.parse_args()
 
-    sorter = trading_export_sorter(args.csv_file, debug=args.debug)
-    #sorter.calculate_fifo_for_ticker(sorter.buy_and_sell.get_group('3MST'))
+    sorter = trading212_export_sorter(args.csv_file, debug=args.debug)
     sorter.do_work(args.output_file)
 
 if __name__ == "__main__":
