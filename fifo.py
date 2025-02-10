@@ -4,6 +4,7 @@ import argparse
 from openpyxl import load_workbook
 from collections import namedtuple
 from dataclasses import dataclass
+from decimal import Decimal
 
 # TODO:
 # - add a way to specify the starting position for a ticker (e.g. if you already had some shares before the export)
@@ -29,6 +30,17 @@ class trading_export_sorter:
         self.debug = debug
 
         self.df = pd.read_csv(input_file)
+        self.df['No. of shares'] = self.df['No. of shares'].apply(Decimal)
+        self.df['Price / share'] = self.df['Price / share'].apply(Decimal)
+        self.df['Result'] = self.df['Result'].apply(Decimal)
+        self.df['Currency conversion fee'] = self.df['Currency conversion fee'].apply(Decimal)
+        self.df['Interest on cash'] = self.df['Interest on cash'].apply(Decimal)
+        self.df['Lending interest'] = self.df['Lending interest'].apply(Decimal)
+        self.df['Deposit'] = self.df['Deposit'].apply(Decimal)
+        self.df['Dividend (Dividend)'] = self.df['Dividend (Dividend)'].apply(Decimal)
+        self.df['Dividend (Dividend manufactured payment)'] = self.df['Dividend (Dividend manufactured payment)'].apply(Decimal)
+        self.df['New card cost'] = self.df['New card cost'].apply(Decimal)
+        
         self.debug_print(self.df.columns)
         self.debug_print(f"Actions in the file: {self.df['Action'].unique()}")
         # invert values of currency conversion fees
